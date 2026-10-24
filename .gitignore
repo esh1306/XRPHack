@@ -1,5 +1,11 @@
 .venv/
 data/
 cache/
+outputs/
+logs/
+catboost_info/
+__pycache__/
 *.parquet
+*.pyc
+.DS_Store
 .env

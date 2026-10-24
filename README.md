@@ -105,3 +105,11 @@ CV gains stopped transferring to the leaderboard, which points to a train→test
   - v9b: 65.64 / 85.41 / 13.99 / 0.76
   - prototype pipeline alone: 61.72 / 79.03 / 11.68 / 0.71
 - Propagation on older OOFs: v6 fold-seed 7 60.37→61.42; v6 fold-seed 2026 60.33→61.12; v6x 62.91→63.79.
+
+## v10 / v13 Final (default `./run.sh`, Leaderboard **71.6**): Super-Ensemble + Hard-Relay & Medium-Cluster Detectors (`src/fe11_hard_med.py`, `src/v13_final.py`)
+- See **`LEARNING_GUIDE_TO_80_AP.md`** for a complete deep-dive into the domain mechanics, dataset anatomy, model architecture, ablation lessons, and the roadmap to 80+ AP.
+- Adds `src/fe11_hard_med.py` (145 features):
+  - **Hard relay detectors**: 2-hop `distributed_relay` bridge identification (`pair_n` in {3,4} with >=20h episode spacing), `[1.5h, 3.3h]` pre-funding and post-payout episode lag windows, 1-hop `aggregate_relay` `[3.6h, 5.8h]` hold-time lag bands, forward vs reverse refill asymmetry (`strict_fwd`), and per-episode USD conservation (`min_r`).
+  - **Medium closed-cluster detectors**: 2-hop closed novel-edge clusters extended across `15m, 45m, 90m, 3h, 5h, 8h`, pure-source to pure-sink end-to-end USD conservation (`mc_e2e_ratio`, `mc_e2e_err`), stack/bipartite/cycle topology indicators, and inter-step timing regularity (`mc_dt_cv`).
+- Also wires in `prior_work/prototype_agent/app/{cluster,relay,funding,fingerprint}.py` (74 features), with within-split percentile rank normalization for any column with train-vs-test KS > 0.06.
+- `src/v13_final.py` (**71.6 LB**) blends `v7x no-head` (0.08) + `Prototype Stage-1` (0.82) + `3-seed Xs_983 LightGBM specialist` (0.10), applies multi-scale closed-cluster score propagation (`propagate_cluster_scores`), locks the top 4% (`Easy + top Medium`), and re-ranks below the top 4% with the 3-seed `Xs_983` LightGBM specialist (0.15) + verified distributed-relay episode propagation (0.10).

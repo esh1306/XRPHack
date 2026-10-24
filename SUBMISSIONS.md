@@ -124,3 +124,14 @@
 - File: sha256 169210e1d0d68e546860b68ffd087c04723b5f01b5d8d111d752edc367f3b6c9.
 - No-head variant (prepared, NOT shipped): cache/submission_v7x_nohead.csv, sha256 450183fa….
   - Spearman vs v6x 0.9787 (top-400 changed 25, top-1250 changed 107); vs v7 0.9663 (36 / 122).
+
+## v9b -> v9c -> v9e -> v13 Final (Leaderboard 69.0 -> 70.5 -> 71.3 -> **71.6**)
+- `v9b` (0.7 v7x_nohead + 0.3 Prototype Stage-1 -> closed-cluster propagation): **69.0 LB**
+- `v9c_w60` (0.4 v7x_nohead + 0.6 Prototype Stage-1 -> closed-cluster propagation): **70.5 LB**
+- `v9e_w90` (0.1 v7x_nohead + 0.9 Prototype Stage-1 -> closed-cluster propagation): **71.3 LB**
+- `v10` (4-suite blend including CatBoost on 983-col matrix, unprotected): **71.1 LB** (CatBoost's 2.49% Medium AP on the 983-col matrix diluted LightGBM's 14.24% Medium AP).
+- **`v13_protected_hard_med` (`src/v13_final.py`, `outputs/submission_v13_protected_hard_med.csv`)**: **71.6 LB (FINAL BEST)**
+  - Stage 1: `0.08 * rank(v7x_nohead) + 0.82 * rank(Prototype_S1) + 0.10 * rank(3-seed Xs_983 LightGBM specialist with FE11 Hard-Relay & Medium-Cluster features)`
+  - Stage 2: Multi-scale closed-cluster score propagation (`propagate_cluster_scores`)
+  - Stage 3: Top-4% protected re-ranking (`0.75 * base + 0.15 * Xs_983_LGB + 0.10 * propagate_relay_episodes` below top 4%).
+  - See `LEARNING_GUIDE_TO_80_AP.md` for full analysis and roadmap to 80+ AP.

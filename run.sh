@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./run.sh [TEST_DIR] [OUT_CSV]   (v9: V9=1 ./run.sh ; v9b: V9B=1 ./run.sh ; v7x no-head: V7X=1 NOHEAD=1)
+# Usage: ./run.sh [TEST_DIR] [OUT_CSV]   (v10 default: V10=1 ./run.sh ; v9: V9=1 ./run.sh ; v9b: V9B=1 ./run.sh ; v7x no-head: V7X=1 NOHEAD=1)
 # Weight variants: BLEND_OURS=0.6|0.5|0.4 V9B=1 ./run.sh  (v9c_w40/w50/w60 = prototype weight 0.4/0.5/0.6)
 # Reproduces the predictions CSV from the organisers' data. TEST_DIR defaults to data/test.
 # Expects data/train/ (with labels.csv) and TEST_DIR/{transactions,transfers,blocks}.parquet + market_rates.csv.
@@ -27,6 +27,15 @@ $PY src/fe4.py "$TEST_DIR" cache/test_f4.parquet
 $PY src/fe5.py "$TEST_DIR" cache/test_f5.parquet
 $PY src/fe6.py "$TEST_DIR" cache/test_f6.parquet
 $PY src/fe8.py "$TEST_DIR" cache/test_f8.parquet
+if [ "${V10:-1}" = "1" ] && [ "${V9:-0}" != "1" ] && [ "${V9B:-0}" != "1" ] && [ "${V7X:-0}" != "1" ] && [ "${V6X:-0}" != "1" ]; then
+  # v13 (default, 71.6 LB): v7x no-head (0.08) + Prototype Stage-1 (0.82) + Xs_983 LightGBM Hard/Med Specialist (0.10)
+  # -> Closed-Cluster Propagation + Protected Top-4% Re-Ranking with Xs_983 LightGBM & Verified Relay Episode Propagation.
+  mkdir -p cache/fe10; [ -f cache/fe10/test_fe10.parquet ] || $PY src/fe10_medium.py build
+  [ -f cache/pred_test_v7x_base.parquet ] || V10=0 V7X=1 NOHEAD=1 bash "$0" "$TEST_DIR" cache/submission_v7x_nohead_rebuild.csv
+  $PY src/v13_final.py "$TEST_DIR" cache/pred_test_v13.parquet
+  $PY src/make_submission.py cache/pred_test_v13.parquet "$TEST_DIR" "$OUT" cache/test
+  exit 0
+fi
 if [ "${V9:-0}" = "1" ] || [ "${V9B:-0}" = "1" ]; then
   # v9: v7x no-head base + closed-cluster score propagation (prior_work/prototype_agent, MIT, see PRIOR_WORK.md).
   # v9b (V9B=1): 0.7*rank(v7x no-head) + 0.3*rank(prototype stage-1 ensemble), then propagation.
