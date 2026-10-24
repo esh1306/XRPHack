@@ -124,14 +124,142 @@
 - File: sha256 169210e1d0d68e546860b68ffd087c04723b5f01b5d8d111d752edc367f3b6c9.
 - No-head variant (prepared, NOT shipped): cache/submission_v7x_nohead.csv, sha256 450183fa….
   - Spearman vs v6x 0.9787 (top-400 changed 25, top-1250 changed 107); vs v7 0.9663 (36 / 122).
+- 13:50 UTC (14:50 UK): submission_v7x.csv + code_solo_validator_v7x.zip -> 65.5 (P 93%, AUC 0.91)
+- 13:50 UTC (14:50 UK): cache/submission_v7x_nohead.csv + code_solo_validator_v7x.zip (V7X=1 NOHEAD=1) -> 65.6 (NEW BEST)
 
-## v9b -> v9c -> v9e -> v13 Final (Leaderboard 69.0 -> 70.5 -> 71.3 -> **71.6**)
-- `v9b` (0.7 v7x_nohead + 0.3 Prototype Stage-1 -> closed-cluster propagation): **69.0 LB**
-- `v9c_w60` (0.4 v7x_nohead + 0.6 Prototype Stage-1 -> closed-cluster propagation): **70.5 LB**
-- `v9e_w90` (0.1 v7x_nohead + 0.9 Prototype Stage-1 -> closed-cluster propagation): **71.3 LB**
-- `v10` (4-suite blend including CatBoost on 983-col matrix, unprotected): **71.1 LB** (CatBoost's 2.49% Medium AP on the 983-col matrix diluted LightGBM's 14.24% Medium AP).
-- **`v13_protected_hard_med` (`src/v13_final.py`, `outputs/submission_v13_protected_hard_med.csv`)**: **71.6 LB (FINAL BEST)**
-  - Stage 1: `0.08 * rank(v7x_nohead) + 0.82 * rank(Prototype_S1) + 0.10 * rank(3-seed Xs_983 LightGBM specialist with FE11 Hard-Relay & Medium-Cluster features)`
-  - Stage 2: Multi-scale closed-cluster score propagation (`propagate_cluster_scores`)
-  - Stage 3: Top-4% protected re-ranking (`0.75 * base + 0.15 * Xs_983_LGB + 0.10 * propagate_relay_episodes` below top 4%).
-  - See `LEARNING_GUIDE_TO_80_AP.md` for full analysis and roadmap to 80+ AP.
+## v8 tiered re-rank: 2026-10-24 ~14:55 London. NEGATIVE, not shipped (no CSV/zip produced)
+- Idea: keep the base model's top-K block (the easy cases) in place, then reorder everything below K using a medium/hard specialist. The specialist is a LightGBM trained without easy positives, with legit look-alike negatives weighted x3, on the v6x feature set. Code: src/v8_tiered.py, src/v8_v7x_eval.py, src/v8b_stack.py. Logs: logs/v8_cv.log, logs/v8_cv.json, logs/v8_v7x_eval.log, logs/v8b_stack.log.
+- Specialist alone (all/easy/med/hard), fold seeds 42/7/2026: 14.1/13.8/2.7/0.6; 16.4/15.7/4.6/0.7; 15.0/15.1/2.4/0.7. It is weaker on medium than the base (v6x 7.35, v7x 9.73), because dropping the easy positives removes the shared motif signal.
+- Tiered on the v7x base OOF (fold 42, 63.79/84.58/9.73/0.74):
+  - every K in 1.5–4% and a in {0,1,2}, plus the soft variant: −0.73 to −16.9;
+  - best: K=4%, a=2 → 63.06/84.20/9.34/0.68.
+- Tiered on the v6x base OOF (fold 42, 62.91/83.62/7.35/0.75): best is K=4%, a=2 → −0.57 (62.34/83.21/7.16/0.69).
+- On the fe10 single-LGB base, K=4% gives +0.49 (seed 42), −0.77 to −1.21 (seed 7) and −0.35 to +0.02 (seed 2026). Not consistent.
+- Stacker variant (all positives kept; easy w0.3, med/hard w3, twins w3, plus a base-rank feature; fold 42 on v6x): alone 56.74 and medium 5.17. Tiered −2.4 to −4.6. Rank-average at 0.2 gives −1.09.
+- Why: the AP loss comes from easy positives that rank below K. Those get re-ordered by a model that is blind to them. Meanwhile medium does not improve, because the base already ranks medium better than any specialist.
+- 14:58 London: FE11 sklearn pattern mapping (NN template density, KMeans/HDBSCAN episode map, LOF) tested on v6x stage-1, 6 fold seeds: +0.38 ± 1.58 all, +0.26 medium -> dropped. See FE11.md.
+
+## v7x2 — second self-training round, no head (outputs/submission_v7x2.csv)
+- What it is: src/pseudo.py with the v7x settings (top 0.8% pseudo-positive, bottom 60% pseudo-negative, pseudo weight 0.5, cmp900 cluster exclusion, cluster-grouped 5-fold) on the v6x features.
+  - Teacher: the v7x no-head test scores (cache/pred_test_v7x_base.parquet; same ranking as cache/submission_v7x_nohead.csv, Spearman 1.0).
+  - Ships the no-head score.
+- Pseudo set: 321 positives, 21,821 negatives (2,239 dropped for sharing a cluster).
+- Reproduce: `V7X2=1 bash run.sh` (rebuilds the v7x teacher if it is missing).
+- Fold-seed-42 train OOF (all/easy/medium/hard):
+  - v7x2 base 61.51/80.99/10.07/0.76 (this is the shipped one); +head 61.73/81.49/9.79/0.71.
+  - v7x base 63.79/84.58/9.73/0.74.
+  - Overall OOF fell 2.3, mostly on easy; medium rose 0.34.
+- Leaderboard context: v7x no-head 65.6, v7x 65.5.
+- Test agreement (Spearman / top-400 changed / top-1250 changed):
+  - vs v7x no-head 0.9939 / 17 / 40.
+  - vs v7x 0.9773 / 20 / 104.
+  - vs v6x 0.9773 / 28 / 116.
+- Validation: 40,101 unique hashes, same set as test; scores 2.5e-05..1.0; no NaN.
+- File: sha256 0872ee6a5af17880f24c99be3e12c5c4331918ec6f3afc8f433915d0d079a6d4.
+- The POS_FRAC=0.012 variant was not run (no time within 6 cores). To run it: `V7X2=1 POS_FRAC=0.012 V7X2_TAG=_pf012 bash run.sh . cache/submission_v7x2_pf012.csv`.
+
+## v9 / v9b: Sahid's earlier prototype's closed-cluster score propagation on v7x no-head. 2026-10-24 ~15:08 London
+- Source: Sahid's earlier prototype "Decode & Detect AML investigator agent" (separate codebase by Sahid, MIT, Copyright (c) 2026 Sahid). It is in prior_work/prototype_agent with its LICENSE kept, and is credited in PRIOR_WORK.md. Review notes: prototype/PROTOTYPE_NOTES.md. No Jev/OpenAI/network calls.
+- The prototype's pipeline (train_e.py) on our CV (SGKF5 scenario_id, seed 42), all/easy/med/hard: 61.72/79.03/11.68/0.71 (stage-1 60.07). Its test output is prototype/out_test.csv. Against v7x no-head on test: Spearman 0.705, top-400 overlap 264, top-1250 overlap 1005.
+- v9 = v7x no-head + propagate_cluster_scores. CV42 63.79 -> 64.89 (med 9.73 -> 12.65). The same propagation on older OOFs: v6 fs7 +1.05, v6 fs2026 +0.79, v6x +0.88, final_v6 +1.41.
+  - outputs/submission_v9.csv, sha 86d5a915…
+  - outputs/code_solo_validator_v9.zip (V9=1), sha d411ceef…, 82,670 B
+  - Against v7x no-head on test: Spearman 0.964, top-400 overlap 370, top-1250 overlap 1181.
+- v9b = 0.7 rank(v7x no-head) + 0.3 rank(prototype stage-1), then propagation. CV42 65.64/85.41/13.99/0.76 (w=0.5 gives 65.35).
+  - outputs/submission_v9b.csv, sha 3a7d4fb4…
+  - outputs/code_solo_validator_v9b.zip (V9B=1), sha c93da998…, 95,390 B
+  - Against v7x no-head on test: Spearman 0.941, top-400 overlap 356, top-1250 overlap 1127.
+- Leaderboard: pending.
+- Reproduction check 15:08 London: src/v9_prop.py output matches the shipped CSVs (v9 Spearman 1.0000; v9b checked below).
+  v9b rerun via src/v9_prop.py --blend-prototype 0.7: Spearman 0.999998 vs shipped CSV, top-400 overlap 399/400, top-1250 overlap 1249/1250. Not bit-identical. The shipped v9b used the v7x no-head CSV ranks and the prototype test stage-1 saved by prototype/run_prototype.py; the rerun recomputes both from cache/pred_test_v7x_base.parquet. The cause of the tiny difference is unconfirmed.
+- 14:09 UTC (15:09 UK): submission_v9b.csv + code_solo_validator_v9b.zip -> 69.0 (NEW BEST; P 93%, AUC 0.92)
+- 14:09 UTC (15:09 UK): submission_v9.csv + code_solo_validator_v9.zip -> 66.1
+- 14:09 UTC (15:09 UK): submission_v7x2.csv + code_solo_validator_v7x2.zip -> 65.7
+
+## v9c / v9d — prototype-weight sweep on top of v9b (leaderboard: v9b 69.0)
+- What they are: rank(ours) and rank(prototype stage-1) are blended, then the prototype's cluster propagation is applied, exactly like v9b.
+  - The test CSVs come from prototype/ cached stage-1 scores (src/v10_post.py FIXED=w,0).
+  - That path reproduces v9b's ranking exactly (Spearman 1.0000); only the score scale differs.
+- Reproduce: zip outputs/code_solo_validator_v9c.zip, `V9C=1 BLEND_W=<prototype w> bash run.sh`; `BASE=v7x2` for v9d.
+- Fold-42 OOF (all/easy/medium/hard), with Spearman and top-400 changed vs the v9b test file:
+
+| File | Prototype w | OOF all/easy/medium/hard | Spearman vs v9b | Top-400 changed |
+|---|---|---|---|---|
+| v9b (ref) | 0.3 | 65.64/85.41/13.99/0.76 | – | – |
+| outputs/submission_v9c_w40.csv | 0.4 | 65.54/85.07/14.17/0.76 | 0.9970 | 9 |
+| outputs/submission_v9c_w50.csv | 0.5 | 65.35/84.62/14.40/0.75 | 0.9879 | 25 |
+| outputs/submission_v9c_w60.csv | 0.6 | 65.05/84.04/14.52/0.75 | 0.9726 | 41 |
+| outputs/submission_v9d.csv (v7x2 base) | 0.3 | 63.77/82.53/12.85/0.77 | 0.9975 | 13 |
+
+- sha256:
+  - w40 69474484c370211c38bbd78db22ce934d2cc038e8befe56ef3b5ef159a74884c
+  - w50 e9231959503930895f72c8825095e9ae0d116c198fa2e7a4b9dd908707126260
+  - w60 4a3bbba5b405dd87a400d7df061199aa756642b6bd7f3f233fe37af276b0ee8d
+  - v9d cbceb9b5afbe2d539bc23a4e6fbdd542db0ad03eecf1dd9e34ae60b679782d2b
+- Validation (all four): 40,101 unique hashes, exactly the test set; scores 2.5e-05..1.0; no NaN.
+
+## Related work / literature consulted (log note, 15:15 London)
+- **Consulted during the build:**
+  - BlazingAML (arXiv:2604.12241): scatter-gather, gather-scatter and 3-cycle counts → `fe6`. Kept additively from v6x.
+  - MPOCryptoML / Samadi RMIT thesis (arXiv:2508.12641): PPR/NTS/NWS → `fe9_rmit.py`. No consistent gain; not used.
+  - The Elliptic article on chain-hopping: maps to XRPL currency hops, already covered (`g2_am1h_ccy_switch`). Nothing new added.
+  - IBM AMLworld (Altman et al., NeurIPS 2023): typology design for the motif features.
+- **Where the v9/v9b breakthrough (65.6 → 66.1 → 69.0) came from:** closed-cluster score propagation and the second (stage-1) model in Sahid's earlier prototype "Decode & Detect AML investigator agent" (separate codebase by Sahid) (MIT, Copyright (c) 2026 Sahid). It is used without Jev/OpenAI, and its licence is kept in prior_work/prototype_agent and PRIOR_WORK.md. Score/label propagation is a well-known graph-smoothing approach (collective classification). None of the papers above produced this gain, and the report does not claim they did.
+- 14:20-14:23 UTC (15:20-15:23 UK), zip code_solo_validator_v9c_final.zip: v9c_w40 (prototype weight 0.4) -> 69.6; v9c_w50 -> 70.1; v9c_w60 -> 70.5 (NEW BEST)
+
+## v9c_bestofboth (cache/submission_v9c_bestofboth.csv, not shipped)
+- Our top-2% kept on top; the rest ordered by blend (0.6 ours / 0.4 prototype) + cluster propagation.
+- Fold-42 CV: 66.36 all / 86.45 easy / 12.06 medium / 0.76 hard.
+- Picked from a 12-config grid on the same OOF, so mild selection bias.
+- sha256 146df62d…
+
+## v10 (not built)
+- The pseudo stage-2 run was OOM-killed at about 15:26 BST, with 15 GB RAM and load around 42 from other workers.
+- Stage-1 blend CV with prototype KS<0.1 columns: 62.89.
+- The staged prior-work zip is at /tmp/stage_v10pw.
+
+## v9e — prototype-weight sweep continued (built 15:29 London; not yet uploaded / no leaderboard score yet)
+- Same as v9c: `cd prototype && FIXED=<our w>,0 OUT=... ../.venv/bin/python ../src/v10_post.py write`, then `src/make_submission.py <parquet> data/test OUT cache/test`.
+- Repro check of this path for w60: Spearman 0.99999999983 vs delivered outputs/submission_v9c_w60.csv, identical top-401 and top-1250 sets (only score rounding / reason text differ).
+
+| File | Prototype w | Fold-42 OOF all/easy/medium/hard | sha256 |
+|---|---|---|---|
+| outputs/submission_v9e_w70.csv | 0.7 | 64.66/83.35/14.57/0.74 | e6fd007ca3298bbf970ef629e188147b46c21b2a1627671291a3971f0dd43b97 |
+| outputs/submission_v9e_w80.csv | 0.8 | 64.15/82.52/14.63/0.73 | eaddc2e6ccc90505b485ea5d891a11f7bc981d9e0034aaef387daa209dbfc055 |
+| outputs/submission_v9e_w90.csv | 0.9 | 63.43/81.43/14.38/0.72 | c9943edf5a03eed4fcc717d4286cdda1fea23f65ef4e73b95a01de6fd56d8dbe |
+- Validation (all three): header TRANSACTION_HASH,score,reason; 40,101 unique hashes = test set; scores finite in (0,1].
+
+## 24 Oct 15:37 uploads (code_solo_validator_v9c_final.zip)
+- v9e_w70 (prototype weight 0.7): LB 70.9
+- v9e_w80 (prototype weight 0.8): LB 71.1
+- v9e_w90 (prototype weight 0.9): LB 71.3 (NEW BEST)
+- v12_own25 (w60, own-rank weight 0.25): LB 70.5
+- v12_iter2 (w60, two propagation passes): LB 70.1
+
+## v11 — our research pattern layer (built 15:37–15:40 London; not yet uploaded)
+- `src/patterns_research.py`: 29 time-windowed pattern features (AMLworld fan-in/out, scatter-gather, gather-scatter, cycles, bipartite, stack/peel; Egressy reverse-edge / port numbering / ego-ID cycles; Elliptic neighbourhood aggregates; FATF structuring / pass-through) -> HistGradientBoosting (seed 42). Pattern-only fold-42 OOF 34.30/38.85/8.32/0.82.
+- Plain rank blend hurt (v9c_w60 65.05 -> 61.53 at 0.1, 58.55 at 0.2; logs/v11_patterns_cv.log). Kept form: top 5% fixed, blend below (`src/final_v11.py`, logs/v11_patterns_cv_protect*.log). Chosen on the same OOF (mild selection bias).
+
+| File | Base | Pattern w | Fold-42 OOF all/easy/medium/hard | sha256 |
+|---|---|---|---|---|
+| outputs/submission_v11_patterns_w10.csv | v9c_w60 | 0.1 | 65.16/84.00/14.70/0.76 | b807fe23da6506a7eeebed3bc939cec5e53b4688c5879641f08171ebdf4bf46a |
+| outputs/submission_v11_patterns_w20.csv | v9c_w60 | 0.2 | 65.20/83.98/14.78/0.77 | f969153d06ce4d36e79dd3758585e9a977d0da6d5f7275d57e851610eda84103 |
+| outputs/submission_v11_patterns_on_w90_w10.csv | v9e_w90 | 0.1 | 63.55/81.42/14.53/0.74 | fd13de6da91ef3c8344159811de0c3d353dd81aa2a356f534e143f53c4e36fdc |
+| outputs/submission_v11_patterns_on_w90_w20.csv | v9e_w90 | 0.2 | 63.61/81.41/14.60/0.75 | b617b64f4f4d96025ae95d895a7824376d6be23bb7ff2ca2b2db261900eb24a0 |
+- Base v9e_w90 OOF 63.43/81.43/14.38/0.72. All four validated: 40,101 unique test hashes, scores in (0,1]. Top 2,005 rows identical to the base file.
+
+## Final code ZIP: outputs/code_solo_validator_final.zip (15:4x London)
+- Default `./run.sh` = v9e_w90 (BLEND_OURS=0.1). Repro check: re-running the staged ZIP's run.sh (with cached v7x / prototype stage-1 inputs) gave a CSV byte-identical to outputs/submission_v9e_w90.csv.
+- v11_patterns_on_w90_w20 (research pattern layer on w90, final ZIP): LB 71.3 (ties best; site top-1% Medium found 10%, first time above 0%)
+- v11_patterns_on_w90_w10: LB 71.3
+- v9f_w95 (prototype weight 0.95, final ZIP): LB 71.3
+- v9f_w100 (prototype only + propagation): LB 71.0  -> sweep peaked at 0.9-0.95
+- FINAL PICK: v11_patterns_on_w90_w20 (LB 71.3, reproducible with PATTERNS=0.2 ./run.sh from code_solo_validator_final.zip)
+- v13_pat35_on_w95: LB 71.2; v13_pat20_on_w95: LB 71.2; v13_pat50_on_w95: LB 71.1 (no gain; Hard still 0% in top 1%)
+
+## 24 Oct 16:25 BST — v13_protected_hard_med (`src/v13_final.py`, Leaderboard **71.6** — FINAL BEST)
+- Stage 1: `0.08 * rank(v7x_nohead) + 0.82 * rank(Prototype_S1) + 0.10 * rank(3-seed Xs_983 LightGBM specialist with FE11 Hard-Relay & Medium-Cluster features, no CatBoost)`.
+- Stage 2: Multi-scale closed-cluster score propagation (`propagate_cluster_scores`).
+- Stage 3: Protected Top-4% re-ranking (`0.75 * base + 0.15 * Xs_983_LGB + 0.10 * propagate_relay_episodes` below top 4%).
+- Uploaded as `submission_v13_protected_hard_med.csv` + `code_solo_validator_v10b.zip` -> **Leaderboard 71.6 (NEW BEST)**.
+- See `LEARNING_GUIDE_TO_80_AP.md` for complete post-mortem and roadmap to 80+ AP.

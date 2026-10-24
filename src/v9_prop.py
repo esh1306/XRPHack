@@ -1,6 +1,6 @@
 """v9 / v9b: closed-cluster score propagation on top of the v7x no-head test scores.
 Usage: v9_prop.py BASE_PRED_PARQUET TEST_DIR OUT_PARQUET [--blend-prototype W_OURS]
-  v9  : rank(base) -> propagate_cluster_scores from the earlier prototype (multi-scale closed first-time-payment clusters).
+  v9  : rank(base) -> third-party propagate_cluster_scores (multi-scale closed first-time-payment clusters).
   v9b : W_OURS*rank(base) + (1-W_OURS)*rank(prototype stage-1 ensemble trained on data/train), then propagation (W_OURS=0.7).
 Propagation and the prototype stage-1 model come from prior_work/prototype_agent (MIT, Copyright (c) 2026 Sahid; see PRIOR_WORK.md).
 CV (StratifiedGroupKFold(5) by scenario_id, seed 42; all/easy/med/hard AP): v7x no-head 63.79/84.58/9.73/0.74,
@@ -26,7 +26,7 @@ if w is not None:
     sp, D = design("data/train", "train"); y = labels_array(sp)
     _, T = design(test_dir, "test"); T = T.reindex(columns=D.columns)
     assert (T.index.to_numpy() == et.hash.to_numpy()).all()
-    ft = _ensemble(D, y, T, Parallel(n_jobs=int(os.environ.get("PROTO_JOBS", "4"))))
+    ft = _ensemble(D, y, T, Parallel(n_jobs=int(os.environ.get("PROTOTYPE_JOBS", "4"))))
     s = rk(w * s + (1 - w) * rk(ft))
 p = propagate_cluster_scores(et, s)
 pd.DataFrame({"TRANSACTION_HASH": et.hash.values, "score": p}).to_parquet(out)

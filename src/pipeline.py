@@ -64,6 +64,9 @@ def load_feats(prefix, feats=FEATS):
         sp = prefix.rsplit("/", 1)[-1]
         e = pd.read_parquet(f"cache/fe10/{sp}_fe10.parquet")
         a = a.merge(e[["TRANSACTION_HASH"] + [c for c in e.columns if c not in a.columns]], on="TRANSACTION_HASH", how="left")
+    if os.environ.get("PROTOTYPE_FR") == "1":   # v10: the prototype's c_/m_/acs_/acr_ design columns with KS<0.1 (src/prototype_feats.py)
+        sp = prefix.rsplit("/", 1)[-1]
+        a = a.merge(pd.read_parquet(f"cache/f11fr/{sp}_fr.parquet"), on="TRANSACTION_HASH", how="left")
     if os.environ.get("USE_E8") == "1":   # 8 episode columns from cache/fe8/<split>_fe8.parquet (raw)
         sp = prefix.rsplit("/", 1)[-1]
         e = pd.read_parquet(f"cache/fe8/{sp}_fe8.parquet")[["TRANSACTION_HASH"] + E8_COLS]

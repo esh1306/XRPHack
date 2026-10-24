@@ -1,5 +1,5 @@
 import sys, time, numpy as np, pandas as pd
-sys.path.insert(0, "agent"); sys.path.insert(0, "../src")
+sys.path.insert(0, "../prior_work/prototype_agent"); sys.path.insert(0, "../src")
 from app.data import load_split
 from app.cluster_prop import propagate_cluster_scores
 from sklearn.metrics import average_precision_score as AP
