@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./run.sh [TEST_DIR] [OUT_CSV]   (v9: V9=1 ./run.sh ; v9b: V9B=1 ./run.sh ; v7x no-head: V7X=1 NOHEAD=1)
-# Weight variants: BLEND_OURS=0.6|0.5|0.4 V9B=1 ./run.sh  (v9c_w40/w50/w60 = prototype weight 0.4/0.5/0.6)
+# Usage: ./run.sh [TEST_DIR] [OUT_CSV]
 # Reproduces the predictions CSV from the organisers' data. TEST_DIR defaults to data/test.
 # Expects data/train/ (with labels.csv) and TEST_DIR/{transactions,transfers,blocks}.parquet + market_rates.csv.
 set -euo pipefail
@@ -11,6 +10,33 @@ export NJOBS="${NJOBS:-1}"  # one thread per model process; models run in parall
 [ -x "$PY" ] || { python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt; }
 mkdir -p cache outputs logs "$(dirname "$OUT")"
 exec > >(tee -a "logs/run_$(date +%Y%m%d_%H%M%S).log") 2>&1
+# ---------------------------------------------------------------------------------------------------------------
+# FINAL (default since v9c; FINAL=0 gives the older variants below). Reproduces the chosen leaderboard CSV:
+#   1. our v7x no-head scores (v6x features + transductive self-training) -> cache/pred_test_v7x_base.parquet
+#   2. Sahid's earlier prototype stage-1 ensemble (prior_work/prototype_agent, MIT) -> prototype/cache/test_stage1.npy
+#   3. rank blend BLEND_OURS*rank(ours) + (1-BLEND_OURS)*rank(prototype stage-1), then the prototype's closed-cluster
+#      score propagation (src/v10_post.py)
+#   4. optional: our research pattern layer (src/patterns_research.py) rank-blended at weight PATTERNS (src/final_v11.py)
+#   5. src/make_submission.py: ID check, rank-normalised scores in [0,1], reason column
+# Variants: BLEND_OURS=0.1 (default, v9e_w90, leaderboard 71.3); 0.2 -> v9e_w80 (71.1); 0.3 -> v9e_w70 (70.9); 0.4 -> v9c_w60 (70.5); 0.5 -> v9c_w50 (70.1); 0.6 -> v9c_w40 (69.6);
+#           0.7 -> v9b (69.0). PATTERNS=0 (default); PATTERNS=0.1 / 0.2 -> v11_patterns_on_w90_w10 / w20 (top 5% kept fixed).
+if [ "${FINAL:-1}" = "1" ]; then
+  BLEND_OURS="${BLEND_OURS:-0.1}"; PATTERNS="${PATTERNS:-0}"
+  [ -f cache/pred_test_v7x_base.parquet ] || FINAL=0 POS_FRAC=0.008 V7X=1 NOHEAD=1 bash "$0" "$TEST_DIR" cache/submission_v7x_nohead_rebuild.csv
+  mkdir -p prototype/cache
+  (cd prototype && for s in train test; do [ -f cache/D_$s.parquet ] || ../$PY build_design.py $s; done)
+  (cd prototype && { [ -f cache/test_stage1.npy ] && [ -f cache/oof42_stage1.npy ] || ../$PY run_prototype.py; })
+  (cd prototype && FIXED=$BLEND_OURS,0 OUT=../cache/final_raw.csv ../$PY ../src/v10_post.py write)
+  if [ "$PATTERNS" != "0" ]; then
+    [ -f cache/pat_test.parquet ] || $PY src/patterns_research.py test cache/pat_test.parquet
+    $PY src/final_v11.py cache/final_raw.csv cache/final_pred.parquet cache/pat_test.parquet "$PATTERNS"
+  else
+    $PY src/final_v11.py cache/final_raw.csv cache/final_pred.parquet
+  fi
+  $PY src/make_submission.py cache/final_pred.parquet "$TEST_DIR" "$OUT" cache/test
+  exit 0
+fi
+# ---------------------------------------------------------------------------------------------------------------
 if [ ! -f cache/train_f6.parquet ] || [ "${REBUILD_TRAIN:-0}" = 1 ]; then
   $PY src/fe.py  data/train cache/train_f.parquet
   $PY src/fe2.py data/train cache/train_f2.parquet
@@ -27,23 +53,30 @@ $PY src/fe4.py "$TEST_DIR" cache/test_f4.parquet
 $PY src/fe5.py "$TEST_DIR" cache/test_f5.parquet
 $PY src/fe6.py "$TEST_DIR" cache/test_f6.parquet
 $PY src/fe8.py "$TEST_DIR" cache/test_f8.parquet
-if [ "${V9:-0}" = "1" ] || [ "${V9B:-0}" = "1" ]; then
-  # v9: v7x no-head base + closed-cluster score propagation (prior_work/prototype_agent, MIT, see PRIOR_WORK.md).
-  # v9b (V9B=1): 0.7*rank(v7x no-head) + 0.3*rank(prototype stage-1 ensemble), then propagation.
-  [ -f cache/pred_test_v7x_base.parquet ] || V9=0 V9B=0 V7X=1 NOHEAD=1 bash "$0" "$TEST_DIR" cache/submission_v7x_nohead_rebuild.csv
-  if [ "${V9B:-0}" = "1" ]; then
-    $PY src/v9_prop.py cache/pred_test_v7x_base.parquet "$TEST_DIR" cache/pred_test_v9b.parquet --blend-prototype ${BLEND_OURS:-0.7}
-    $PY src/make_submission.py cache/pred_test_v9b.parquet "$TEST_DIR" "$OUT"
-  else
-    $PY src/v9_prop.py cache/pred_test_v7x_base.parquet "$TEST_DIR" cache/pred_test_v9.parquet
-    $PY src/make_submission.py cache/pred_test_v9.parquet "$TEST_DIR" "$OUT"
-  fi
+if [ "${V10:-0}" = "1" ]; then
+  # v10: v7x no-head pipeline (v6x features + pseudo-labelling) + the prototype's c_/m_/acs_/acr_ features (KS<0.1),
+  # then 0.7 ours + 0.3 prototype stage-1 blend and prototype cluster-score propagation (prior_work/prototype_agent, MIT, see PRIOR_WORK.md).
+  [ -f cache/pred_test_v6xfinal.parquet ] || FINAL=0 V10=0 V6X=1 bash "$0" "$TEST_DIR" cache/submission_v6x_rebuild.csv
+  mkdir -p prototype/cache cache/f11fr
+  (cd prototype && for s in train test; do [ -f cache/D_$s.parquet ] || ../$PY build_design.py $s; done)
+  $PY src/prototype_feats.py
+  SHIFT_EXT=0 F8_GROUPS=A,B,C,D,G FEATS=f2,f3,f4,f6 FE10=1 PROTOTYPE_FR=1 POS_FRAC=0.008 $PY src/pseudo.py cache/pred_test_v6xfinal.parquet cache/lookalike.npz cache/pred_test_v10.parquet
+  (cd prototype && { [ -f cache/test_stage1.npy ] && [ -f cache/oof42_stage1.npy ] || ../$PY run_prototype.py; })
+  (cd prototype && OURS_OOF=../cache/pred_test_v10_oof.parquet OURS_TEST=../cache/pred_test_v10_base.parquet FIXED=${V10_FIXED:-0.7,0} OUT=../$OUT ../$PY ../src/v10_post.py write)
+  exit 0
+fi
+if [ "${V7X2:-0}" = "1" ]; then
+  # v7x2: second self-training round on the v6x features; teacher = v7x no-head test scores (cache/pred_test_v7x_base.parquet),
+  # same pseudo.py settings (top 0.8% pos, bottom 60% neg, weight 0.5, cmp900 cluster exclusion). Ships the no-head score.
+  [ -f cache/pred_test_v7x_base.parquet ] || FINAL=0 POS_FRAC=0.008 V7X2=0 V7X=1 NOHEAD=1 bash "$0" "$TEST_DIR" cache/submission_v7x_nohead_rebuild.csv
+  SHIFT_EXT=0 F8_GROUPS=A,B,C,D,G FEATS=f2,f3,f4,f6 FE10=1 POS_FRAC=${POS_FRAC:-0.008} $PY src/pseudo.py cache/pred_test_v7x_base.parquet cache/lookalike.npz cache/pred_test_v7x2${V7X2_TAG:-}.parquet
+  $PY src/make_submission.py cache/pred_test_v7x2${V7X2_TAG:-}_base.parquet "$TEST_DIR" "$OUT" cache/test
   exit 0
 fi
 if [ "${V7X:-0}" = "1" ]; then
   # v7x: v7 self-training (src/pseudo.py: top 0.8% pseudo-pos, bottom 60% pseudo-neg, weight 0.5, cmp900-grouped 5-fold)
   # on top of the v6x pipeline; pseudo-labels from v6x test scores. Builds v6x first if needed.
-  [ -f cache/pred_test_v6xfinal.parquet ] || V7X=0 V6X=1 bash "$0" "$TEST_DIR" cache/submission_v6x_rebuild.csv
+  [ -f cache/pred_test_v6xfinal.parquet ] || FINAL=0 V7X=0 V6X=1 bash "$0" "$TEST_DIR" cache/submission_v6x_rebuild.csv
   SHIFT_EXT=0 F8_GROUPS=A,B,C,D,G FEATS=f2,f3,f4,f6 FE10=1 POS_FRAC=${POS_FRAC:-0.008} $PY src/pseudo.py cache/pred_test_v6xfinal.parquet cache/lookalike.npz cache/pred_test_v7x.parquet
   if [ "${NOHEAD:-0}" = "1" ]; then P7X=cache/pred_test_v7x_base.parquet; else P7X=cache/pred_test_v7x.parquet; fi
   $PY src/make_submission.py "$P7X" "$TEST_DIR" "$OUT" cache/test

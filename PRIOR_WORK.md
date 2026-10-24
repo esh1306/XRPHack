@@ -10,3 +10,7 @@
 - Jev/OpenAI/server parts not used. The prototype's Jev (TypeSafe API) client, OpenAI agent, FastAPI server and UI are excluded, so this code makes no network calls and needs no API keys.
 - How it is used: `src/v9_prop.py` applies `propagate_cluster_scores` to the v7x no-head test scores (v9). With V9B=1, it first rank-blends the v7x no-head scores (0.7) with the prototype's stage-1 ensemble (0.3).
 - These components come from that prototype. They were not developed during the hackathon day and were not taken from a paper.
+
+## How it is used in the final submission (v9c / v9e)
+- `prototype/build_design.py` and `prototype/run_prototype.py` build the prototype's design matrix and stage-1 ensemble scores from `data/`; `src/v10_post.py` blends them with our v7x no-head scores (`BLEND_OURS`, default 0.1) and applies `propagate_cluster_scores`.
+- Our own additions on top: the whole v7x model (features, self-training) and the research pattern layer `src/patterns_research.py` (AMLworld, Egressy et al., Elliptic, FATF), which is not from the prototype.

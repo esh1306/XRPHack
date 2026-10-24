@@ -1,5 +1,5 @@
 import sys, time, pandas as pd
-sys.path.insert(0, "agent")
+sys.path.insert(0, "../prior_work/prototype_agent")
 from app.train_e import design
 name = sys.argv[1]
 t0=time.time()

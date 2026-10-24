@@ -1,5 +1,5 @@
 import sys, time, numpy as np, pandas as pd
-sys.path.insert(0, "agent")
+sys.path.insert(0, "../prior_work/prototype_agent")
 from joblib import Parallel
 from app.train_e import _ensemble
 from app.cluster_prop import propagate_cluster_scores

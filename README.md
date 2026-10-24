@@ -4,6 +4,21 @@ Team: **Solo Validator** — captain and sole member: Eshita Agarwal.
 
 Scores every test transaction (0–1) for money-laundering suspicion on the synthetic XRPL ledger.
 
+## Final submission (default `./run.sh`): v9e_w90, leaderboard 71.3
+```sh
+./run.sh data/test outputs/submission.csv                 # final pick v9e_w90 (BLEND_OURS=0.1)
+BLEND_OURS=0.4 ./run.sh data/test outputs/v9c_w60.csv     # other sweep points: 0.2 (w80), 0.3 (w70), 0.4 (w60), 0.7 (v9b)
+PATTERNS=0.2 ./run.sh data/test outputs/v11.csv           # + our research pattern layer (src/patterns_research.py)
+FINAL=0 V7X=1 NOHEAD=1 ./run.sh ...                       # older variants (see sections below)
+```
+Steps: (1) our v7x no-head model (features `src/fe*.py`, `src/final.py`, self-training `src/pseudo.py`); (2) the stage-1 model of
+Sahid's earlier prototype (`prior_work/prototype_agent`, MIT, see `PRIOR_WORK.md`; driver scripts in `prototype/`); (3) rank blend
+BLEND_OURS·rank(ours) + (1−BLEND_OURS)·rank(prototype) and the prototype's closed-cluster score propagation (`src/v10_post.py`);
+(4) optional pattern layer, top 5% kept fixed (`src/final_v11.py`); (5) `src/make_submission.py`.
+Seeds fixed (42). CPU only, 8 cores / 16 GB RAM; about 15–25 min from scratch. The prototype step reads `data/train` and `data/test`.
+**External services: none** in this pipeline (no LLM/API calls, no keys needed). `src/jev_*`/`src/tsfm_*` experiments are not shipped.
+Team: **Solo Validator**, captain and sole member Eshita Agarwal.
+
 ## Exact command
 ```sh
 # unzip the organisers' training package into data/ (data/train, data/validation, ...)
@@ -96,12 +111,6 @@ CV gains stopped transferring to the leaderboard, which points to a train→test
 - src/pseudo.py now also writes <out>_base.parquet, the no-head score.
 - src/v7x_report.py prints the CV and Spearman comparisons.
 
-## v9 / v9b: closed-cluster score propagation (Sahid's earlier prototype, see PRIOR_WORK.md)
-- `V9=1 ./run.sh` takes the v7x no-head scores (`cache/pred_test_v7x_base.parquet`, rebuilt with V7X=1 NOHEAD=1 if missing). It then applies the prototype's multi-scale closed-cluster score propagation: each payment's final score is 0.35 × its own rank + 0.65 × the weighted mean/max/q75 of base scores over its closed first-time-payment cluster in 5m–4h windows.
-- `V9B=1 ./run.sh` does the same, but first blends 0.7 × rank(v7x no-head) with 0.3 × rank(prototype stage-1: 5-seed HistGradientBoosting + ExtraTrees + LogReg on flow/motif/account-aggregate/closed-cluster domain features).
-- Our CV (StratifiedGroupKFold(5) by scenario_id, seed 42), AP all/easy/medium/hard:
-  - v7x no-head: 63.79 / 84.58 / 9.73 / 0.74
-  - v9: 64.89 / 85.54 / 12.65 / 0.76
-  - v9b: 65.64 / 85.41 / 13.99 / 0.76
-  - prototype pipeline alone: 61.72 / 79.03 / 11.68 / 0.71
-- Propagation on older OOFs: v6 fold-seed 7 60.37→61.42; v6 fold-seed 2026 60.33→61.12; v6x 62.91→63.79.
+## v7x2 (`V7X2=1 bash run.sh`)
+- A second self-training round on the v6x features, with the v7x no-head scores as the teacher. Outputs the no-head score.
+- Use `POS_FRAC=0.012 V7X2_TAG=_pf012` for the wider-positive variant.

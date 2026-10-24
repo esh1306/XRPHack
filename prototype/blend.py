@@ -1,5 +1,5 @@
 import sys, numpy as np, pandas as pd
-sys.path.insert(0, "agent")
+sys.path.insert(0, "../prior_work/prototype_agent")
 from app.cluster_prop import propagate_cluster_scores
 from sklearn.metrics import average_precision_score as AP
 from scipy.stats import rankdata
